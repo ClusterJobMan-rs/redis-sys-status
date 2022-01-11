@@ -8,6 +8,5 @@ edition = "2021"
 [dependencies]
 tokio = { version = "*", features = ["full"] }
 redis = { version = "*", features = ["tokio-comp"] }
-sys-info = "*"
-systemstat = "*"
 pnet = "*"
+sysinfo = "*"

@@ -1,9 +1,11 @@
+extern crate sysinfo;
+
 use std::thread;
 use std::time::Duration;
+use std::collections::HashMap;
 
 use pnet::datalink;
-use sys_info::*;
-use systemstat::*;
+use sysinfo::{ProcessorExt, System, SystemExt};
 
 fn ip_find(interface_name: &str) -> String{
     for iface in datalink::interfaces() {
@@ -34,53 +36,35 @@ fn main() {
     let _ = redis::Cmd::sadd("nodes", own_addr.clone())
         .query::<i32>(&mut rdconn);
 
+    let mut sys = System::new_all();
+
     loop {
-        let sys = systemstat::System::new();
+        sys.refresh_all();
 
-        let os_type = os_type().unwrap();
-        let os_release = os_release().unwrap();
-        let cpu_num = cpu_num().unwrap();
-        let cpu_speed = cpu_speed().unwrap();
-        let proc_total = proc_total().unwrap();
-        let mut cpu_user: f32 = 0.0;
-        let mut cpu_nice: f32 = 0.0;
-        let mut cpu_system: f32 = 0.0;
-        let mut cpu_idle: f32 = 0.0;
-        let mut load_one: f32 = 0.0;
-        let mut load_five: f32 = 0.0;
-        let mut load_fifteen: f32 = 0.0;
-        let mut mem_total: u64 = 0;
-        let mut mem_free: u64 = 0;
+        let hostname = sys.host_name().unwrap();
+        let os_type = sys.long_os_version().unwrap();
+        let os_release = sys.kernel_version().unwrap();
+        //let cpu_arch = host::info().architecture().as_str().to_string();
+        let cpu_num = sys.physical_core_count().unwrap();
+        let cpu_speed = sys.global_processor_info().frequency();
+        let proc_total = sys.processes().len();
+        let mut cpu_usage: HashMap<String, f32> = HashMap::new();
+        let load_one: f64 = sys.load_average().one;
+        let load_five: f64 = sys.load_average().five;
+        let load_fifteen: f64 = sys.load_average().fifteen;
+        let mem_total: u64 = sys.total_memory();
+        let mem_free: u64 = sys.free_memory();
 
-        match sys.cpu_load_aggregate() {
-            Ok(cpu) => {
-                thread::sleep(Duration::from_secs(1));
-                let cpu = cpu.done().unwrap();
-                cpu_user = cpu.user;
-                cpu_nice = cpu.nice;
-                cpu_system = cpu.system;
-                cpu_idle = cpu.idle;
-            }
-            Err(x) => println!("CPU load error: {}", x)
+        for proc in sys.processors() {
+            cpu_usage.insert(proc.name().to_string(), proc.cpu_usage());
+            let _ = redis::cmd("HSET")
+                .arg(&[format!("{}_cpu_usage", own_addr.clone()), proc.name().to_string(), proc.cpu_usage().to_string()])
+                .query::<i32>(&mut rdconn);
         }
 
-        match sys.load_average() {
-            Ok(load) => {
-                load_one = load.one;
-                load_five = load.five;
-                load_fifteen = load.fifteen;
-            },
-            Err(x) => println!("Load average error: {}", x)
-        }
-
-        match sys.memory() {
-            Ok(mem) => {
-                mem_total = mem.total.0;
-                mem_free = mem.free.0;
-            }
-            Err(x) => println!("Memory Error: {}", x)
-        }
-
+        let _ = redis::cmd("HSET")
+            .arg(&[format!("{}_status", own_addr.clone()), "hostname".to_string(), hostname])
+            .query::<i32>(&mut rdconn);
         let _ = redis::cmd("HSET")
             .arg(&[format!("{}_status", own_addr.clone()), "os_type".to_string(), os_type])
             .query::<i32>(&mut rdconn);
@@ -95,18 +79,6 @@ fn main() {
             .query::<i32>(&mut rdconn);
         let _ = redis::cmd("HSET")
             .arg(&[format!("{}_status", own_addr.clone()), "proc_total".to_string(), proc_total.to_string()])
-            .query::<i32>(&mut rdconn);
-        let _ = redis::cmd("HSET")
-            .arg(&[format!("{}_status", own_addr.clone()), "cpu_user".to_string(), cpu_user.to_string()])
-            .query::<i32>(&mut rdconn);
-        let _ = redis::cmd("HSET")
-            .arg(&[format!("{}_status", own_addr.clone()), "cpu_nice".to_string(), cpu_nice.to_string()])
-            .query::<i32>(&mut rdconn);
-        let _ = redis::cmd("HSET")
-            .arg(&[format!("{}_status", own_addr.clone()), "cpu_system".to_string(), cpu_system.to_string()])
-            .query::<i32>(&mut rdconn);
-        let _ = redis::cmd("HSET")
-            .arg(&[format!("{}_status", own_addr.clone()), "cpu_idle".to_string(), cpu_idle.to_string()])
             .query::<i32>(&mut rdconn);
         let _ = redis::cmd("HSET")
             .arg(&[format!("{}_status", own_addr.clone()), "load_one".to_string(), load_one.to_string()])
