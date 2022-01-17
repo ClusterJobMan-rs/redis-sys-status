@@ -1,9 +1,12 @@
 extern crate sysinfo;
 
+use std::env;
+use std::str;
 use std::thread;
 use std::time::Duration;
 use std::collections::HashMap;
 
+use redis::FromRedisValue;
 use pnet::datalink;
 use sysinfo::{ProcessorExt, System, SystemExt};
 
@@ -28,13 +31,38 @@ fn ip_find(interface_name: &str) -> String{
 }
 
 fn main() {
-    let rd_client = redis::Client::open("redis://127.0.0.1").unwrap();
+    let args: Vec<String> = env::args().collect();
+
+    let netif = &args[0];
+    let redisaddr = &args[1];
+
+    let rd_client = redis::Client::open(format!("redis://{}", redisaddr)).unwrap();
     let mut rdconn = rd_client.get_connection().unwrap();
 
-    let own_addr = ip_find("eth0");
+    let own_addr = ip_find(netif);
 
-    let _ = redis::Cmd::sadd("nodes", own_addr.clone())
-        .query::<i32>(&mut rdconn);
+    match redis::cmd("SMEMBERS")
+        .arg(&["nodes"])
+        .query(&mut rdconn)
+        .expect("could not execute redis command")
+    {
+        redis::Value::Bulk(a) => {
+            for i in 0..a.len() {
+                match FromRedisValue::from_redis_value(&a[i]) {
+                    Ok(redis::Value::Data(d)) => {
+                        if own_addr == str::from_utf8(&d).unwrap().to_string() {
+                            break;
+                        }
+                    }
+                    Err(e) => panic!("{}", e),
+                    _ => panic!("error")
+                }
+                if i == a.len() { panic!("this computer is not member of cluster.") }
+            }
+            
+        }
+        _ => panic!("error"),
+    };
 
     let mut sys = System::new_all();
 
