@@ -33,8 +33,8 @@ fn ip_find(interface_name: &str) -> String{
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    let netif = &args[0];
-    let redisaddr = &args[1];
+    let netif = &args[1];
+    let redisaddr = &args[2];
 
     let rd_client = redis::Client::open(format!("redis://{}", redisaddr)).unwrap();
     let mut rdconn = rd_client.get_connection().unwrap();
