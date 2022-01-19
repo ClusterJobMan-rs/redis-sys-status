@@ -73,7 +73,7 @@ fn main() {
         let os_type = sys.long_os_version().unwrap();
         let os_release = sys.kernel_version().unwrap();
         //let cpu_arch = host::info().architecture().as_str().to_string();
-        let cpu_num = sys.physical_core_count().unwrap();
+        let cpu_num = sys.processors().len();
         let cpu_speed = sys.global_processor_info().frequency();
         let proc_total = sys.processes().len();
         let mut cpu_usage: HashMap<String, f32> = HashMap::new();
